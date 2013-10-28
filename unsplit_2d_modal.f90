@@ -24,21 +24,29 @@ PROGRAM execute
 
 	transient = .FALSE.
 	start_res = 8 ! Number of elements in each direction
-	CALL test2d_modal(1,start_res,start_res,2,3,20,0.3D0/sqrt(2d0))
+	CALL test2d_modal(10,start_res,start_res,2,3,20,0.1D0) !1D0/(2D0*4D0-1D0) !0.3D0/sqrt(2d0)
 
 	write(*,*) '======'
 	write(*,*) 'TEST 2: Smooth cosbell deformation'
 	write(*,*) '======'
 
 	transient = .TRUE.
-!	CALL test2d_modal(6,start_res,start_res,2,3,20,0.1D0)
+!	transient = .FALSE.
+!	CALL test2d_modal(6,start_res,start_res,2,3,20,0.01D0) !1D0/(2D0*4D0-1D0)
 
 	write(*,*) '======'
 	write(*,*) 'TEST 3: Standard cosbell deformation'
 	write(*,*) '======'
 
 	transient = .TRUE.
-!	CALL test2d_modal(5,start_res,start_res,2,3,20,0.1D0)
+!	CALL test2d_modal(5,start_res,start_res,2,3,20,1D0/(2D0*4D0-1D0))
+
+	write(*,*) '======'
+	write(*,*) 'TEST 4: Square wave deformation'
+	write(*,*) '======'
+	
+	transient = .TRUE.
+!	CALL test2d_modal(7,start_res,start_res,2,3,20,0.01D0) !1D0/(2D0*4D0-1D0)
 
 CONTAINS
 
@@ -59,13 +67,14 @@ CONTAINS
 
 		INTEGER :: nex,ney,nxplot,nyplot,nxiplot,netaplot
 		REAL(KIND=8) :: dxel,dyel,dxplot,dyplot,tfinal, tmp_umax, tmp_vmax, dxm, dym,dt, time, dxiplot,detaplot
-		REAL(KIND=8), ALLOCATABLE, DIMENSION(:,:) :: q, q0, L, dL, L_xi_plot, L_eta_plot, &
+		REAL(KIND=8), ALLOCATABLE, DIMENSION(:,:) :: q, q0, Leg, dLeg, L_xi_plot, L_eta_plot, &
 													 u,v,u_tmp,v_tmp, & ! Velocites within each element
 													 uedge,vedge,uedge_tmp, vedge_tmp, & ! Velocities along each edge of the element
 													 foo,C0,C
 		REAL(KIND=8), ALLOCATABLE, DIMENSION(:) :: qnodes, qweights, x_elcent, y_elcent, xplot,yplot,xiplot,etaplot
-		REAL(KIND=8), ALLOCATABLE, DIMENSION(:,:,:,:) :: A  ! Coefficent array
-		INTEGER :: i,j,k,s,t,n
+		REAL(KIND=8), ALLOCATABLE, DIMENSION(:,:,:,:) :: A,&  ! Coefficent array
+														LL,dLL
+		INTEGER :: i,j,l,m,k,s,t,n
 
 		CHARACTER(len=9) :: outdir
 		REAL(KIND=4), DIMENSION(2) :: tstart,tend,t1,t2
@@ -91,7 +100,9 @@ CONTAINS
 			END SELECT
 
 			! Initialize quadrature weights and nodes (only done once per call)
-			ALLOCATE(qnodes(0:dgorder),qweights(0:dgorder), L(0:dgorder,0:dgorder), dL(0:dgorder,0:dgorder), STAT=ierr)
+			ALLOCATE(qnodes(0:dgorder),qweights(0:dgorder), Leg(0:dgorder,0:dgorder), dLeg(0:dgorder,0:dgorder), &
+					LL(0:dgorder,0:dgorder,0:dgorder,0:dgorder), dLL(0:dgorder,0:dgorder,0:dgorder,0:dgorder), &
+					STAT=ierr)
 			ALLOCATE(foo(0:dgorder,0:dgorder), STAT=ierr)
 	        CALL quad_nodes(dgorder+1,qnodes)
 			CALL quad_weights(dgorder+1,qnodes,qweights)
@@ -113,6 +124,9 @@ CONTAINS
 				etaplot(i) = etaplot(i-1)+detaplot
 			ENDDO
 
+!			xiplot = qnodes(:)
+!			etaplot = qnodes(:)
+
 			! Precompute Legendre basis evaluated at quadrature points and plotting points
 			DO i=1,nxiplot
 				DO j=0,dgorder
@@ -128,21 +142,22 @@ CONTAINS
 
 			DO i=0,dgorder
 				DO j=0,dgorder
-					L(i,j) = legendre(qnodes(i),j)
-					dL(i,j) = dlegendre(qnodes(i),j)
+					Leg(i,j) = legendre(qnodes(i),j)
+					dLeg(i,j) = dlegendre(qnodes(i),j)
 				ENDDO
 			ENDDO
 
-!			DO i=0,dgorder
-!				DO j=0,dgorder
-!					DO s=0,dgorder
-!					DO t=0,dgorder
-!						foo(s,t) = qweights(s)*qweights(t)*L(s,i)*L(t,j)
-!					ENDDO
-!					ENDDO
-!				write(*,*) '(',i,',',j,')',SUM(foo)
-!				ENDDO
-!			ENDDO
+			DO l=0,dgorder
+				DO m=0,dgorder
+					DO s=0,dgorder
+						DO t=0,dgorder
+							LL(l,m,s,t) = Leg(s,l)*Leg(t,m)
+							dLL(l,m,s,t) = dLeg(s,l)*Leg(t,m)
+						ENDDO
+					ENDDO
+				ENDDO
+			ENDDO
+
 
 			DO p=1,nlevel
 				
@@ -168,10 +183,10 @@ CONTAINS
 
 				! Note that elements are ordered row-wise within the domain
 
-				! q(i,j) : Approx. solution on output grid at point (x_i,y_j) based on series expansion
-				! A(i,j,s,t) : Coefficent array ; (i,j) = element, (s,t) = which Legendre polynomial (q_ij = SUM(SUM(A(i,j,s,t)*P_s(xi)*P_t(eta))))
-				! u(i,j,k), v(i,j,k) : Horizontal/vertical vel. array ; i = element, (j,k) = horiz,vertical location within element
-				! uedge(i,j,k), vedge(i,j,k) : Edge horiz./vert. vel. array ; i = element, j = which edge (lower index closer to origin), k = which node
+				! q(i,j) : Approx. solution on output grid at point (x_i,y_j) based on element expansion
+				! A(i,j,l,m) : Coefficent array ; (i,j) = element, (l,m) = which Legendre polynomial (q_ij = SUM(SUM(A(i,j,l,m)*P_l(xi)*P_m(eta))))
+				! u(i,j), v(i,j) : Horizontal/vertical vel. array ; (i,j) = horiz,vertical location
+				! uedge(i,k), vedge(i,j,k) : Edge horiz./vert. vel. array ; i = element, k = which node
 				
 				! Initialize x- and y- grids and xi- and eta- plotting grids
 				x_elcent(1) = dxel/2D0
@@ -198,8 +213,30 @@ CONTAINS
 				! Initialize q, A, u, and v
 
 				CALL init2d(ntest,nex,ney,nxplot,nyplot,dgorder,A,q0,u,v,uedge,vedge,x_elcent,y_elcent,xplot,yplot, &
-							qnodes,qweights,L,cdf_out,tfinal)
+							qnodes,qweights,Leg,cdf_out,tfinal)
+go to 105
+foo = 0D0
+	DO i=1,nex
+	DO j=1,ney
 
+		DO s=1,nxiplot
+		DO t=1,netaplot
+
+			DO l=0,dgorder
+			DO m=0,dgorder
+
+				FOO(l,m) = A(i,j,l,m)*L_xi_plot(s,l)*L_eta_plot(t,m)
+
+			ENDDO
+			ENDDO
+	
+			q0(s+(i-1)*nxiplot,t+(j-1)*netaplot) = SUM(FOO)
+
+		ENDDO
+		ENDDO
+	ENDDO
+	ENDDO
+105 continue
 				! Store element averages for conservation estimation
 				DO i=1,nex
 					DO j=1,ney
@@ -215,17 +252,21 @@ CONTAINS
 				cdf_out = outdir // cdf_out
 
 				! Set up timestep
-				dxm = dxel/DBLE(dgorder+1)
-				dym = dyel/DBLE(dgorder+1)
+!				dxm = dxel/DBLE(dgorder+1)
+!				dym = dyel/DBLE(dgorder+1)
+				dxm = dxel
+				dym = dyel
 
 				tmp_umax = MAX(MAXVAL(DABS(u)),MAXVAL(DABS(uedge)))
 				tmp_vmax = MAX(MAXVAL(DABS(v)),MAXVAL(DABS(vedge)))
 
 				IF(noutput .eq. -1) THEN
-					nstep = CEILING( (tfinal/maxcfl)*(tmp_umax/dxm + tmp_vmax/dym) )
+!					nstep = CEILING( (tfinal/maxcfl)*(tmp_umax/dxm + tmp_vmax/dym) )
+					nstep = CEILING( (tfinal/maxcfl)*(tmp_umax + tmp_vmax)/(dxm*dym) )
 					nout = nstep
 				ELSE
-					nstep = noutput*CEILING( (tfinal/maxcfl)*(tmp_umax/dxm + tmp_vmax/dym)/DBLE(noutput) )
+!					nstep = noutput*CEILING( (tfinal/maxcfl)*(tmp_umax/dxm + tmp_vmax/dym)/DBLE(noutput) )
+					nstep = noutput*CEILING( (tfinal/maxcfl)*(tmp_umax + tmp_vmax)/(dxm*dym)/DBLE(noutput) )
 					nout = noutput
 				ENDIF
 
@@ -251,11 +292,8 @@ CONTAINS
 						v = v_tmp*vel_update(time)
 						vedge = vedge_tmp*vel_update(time)
 					ENDIF
-				tick = etime(t1)
-					CALL coeff_update(q,A,u,v,uedge,vedge,qnodes,qweights,L,dL,L_xi_plot,L_eta_plot,dxel,dyel,& 
+					CALL coeff_update(q,A,u,v,uedge,vedge,qnodes,qweights,Leg,dLL,LL,L_xi_plot,L_eta_plot,dxel,dyel,& 
 									  dt,dgorder,nxplot,nyplot,nex,ney,nxiplot,netaplot)
-				tock = etime(t2) - tick
-				write(*,*) 'Coeff_update:',tock,'s'
 
 
 					! Store element averages for conservation estimation (for modal DG these are just the 0th order coeffs)
@@ -280,11 +318,24 @@ CONTAINS
 
 				e1(p) = SUM(ABS(q(1:nxplot,1:nyplot)-q0))/DBLE(nxplot)/DBLE(nyplot)
 				e2(p) = SQRT(SUM((q(1:nxplot,1:nyplot)-q0)**2)/DBLE(nxplot)/DBLE(nyplot))
+!e2(p)=0D0
+!do i = 1,nex
+!do j = 1,ney
+!	do l=0,dgorder
+!	do m=0,dgorder
+!foo(l,m) = qweights(l)*qweights(m)*(q(1+l+(i-1)*nxiplot,1+m+(j-1)*netaplot)-q0(1+l+(i-1)*nxiplot,1+m+(j-1)*netaplot))**2
+!	enddo
+!	enddo
+!e2(p) = e2(p)+sum(foo)
+!enddo
+!enddo
+!e2(p) = sqrt(e2(p))
+
 				ei(p) = MAXVAL(ABS(q(1:nxplot,1:nyplot)-q0))
 				tf = etime(tend) - t0
 				if (p.eq.1) then
-					write(UNIT=6,FMT='(A111)') &
-'nex    ney      E1        E2       Einf      convergence rate  overshoot  undershoot   cons cputime time step'
+					write(UNIT=6,FMT='(A117)') &
+'   nex    ney      E1        E2       Einf      convergence rate  overshoot  undershoot   cons cputime   time step'
 					cnvg1 = 0.d0
 					cnvg2 = 0.d0
 					cnvgi = 0.d0
@@ -297,7 +348,6 @@ CONTAINS
             cnvg1, cnvg2, cnvgi, &
             tmp_qmax-MAXVAL(q0), &
             MINVAL(q0)-tmp_qmin, &
-!            SUM(q(1:nxplot,1:nyplot)-q0)/DBLE(nxplot*nyplot), tf, nstep
             SUM(C-C0)/DBLE(nex*ney), tf, nstep
 
 
@@ -308,7 +358,7 @@ CONTAINS
 
 			ENDDO
 		ENDDO
-		DEALLOCATE(qnodes,qweights,L,dL,xiplot,etaplot,L_xi_plot,L_eta_plot, STAT=ierr)
+		DEALLOCATE(qnodes,qweights,Leg,dLeg,LL,dLL,xiplot,etaplot,L_xi_plot,L_eta_plot, STAT=ierr)
 
 990    format(2i6,3e12.4,3f5.2,3e12.4,f8.2,i8)
 
@@ -347,6 +397,8 @@ CONTAINS
 	    REAL(KIND=8), DIMENSION(1:nxplot,1:nyplot) :: r
 		REAL(KIND=8), DIMENSION(0:dgorder,0:dgorder) :: foo,g,r_el
 	
+		REAL(KIND=8), DIMENSION(1:(dgorder+1)*nex) :: erru
+		REAL(KIND=8), DIMENSION(1:(dgorder+1)*ney) :: errv
 
 		REAL(KIND=8) :: PI
 		INTEGER :: i,j,l,m,s,t
@@ -370,7 +422,7 @@ CONTAINS
 
 		! Fill stream function arrays
 		SELECT CASE(ntest)
-			CASE(1) ! Uniform u=v=1 ; no time dependence
+			CASE(1,10) ! Uniform u=v=1 ; no time dependence
 				DO j=1,(dgorder+1)*ney
 					psiu(:,j,1) = (y(j)-dymin/2D0) - x(:)
 					psiu(:,j,2) = (y(j)+dymin/2D0) - x(:)
@@ -392,7 +444,7 @@ CONTAINS
 					psiv_edge(i,1:ney,2) = (y_elcent(:) + dyel/2D0) - (x(i)+dxmin/2D0)					
 				ENDDO
 
-			CASE(5:6) ! Leveque deformation flow
+			CASE(5:7) ! Leveque deformation flow
 				!(1/pi)*sin(pi*xf(i))**2 * sin(pi*yf(j))**2
 				DO j=1,(dgorder+1)*ney
 					psiu(:,j,1) = (1/PI)*DSIN(PI*x(:))**2 * DSIN(PI*(y(j)-dymin/2D0))**2
@@ -414,9 +466,11 @@ CONTAINS
 		! Compute velocity from stream functions
 		DO j=1,(dgorder+1)*ney
 			u(:,j) = (psiu(:,j,2)-psiu(:,j,1))/dymin
+!			u(:,j) = 2D0*DSIN(PI*x(:))**2 * DCOS(PI*y(j))
 		ENDDO
 		DO i=1,(dgorder+1)*nex
 			v(i,:) = -(psiv(i,:,2)-psiv(i,:,1))/dxmin
+!			v(i,:) = -2D0*DSIN(PI*y(:))**2 * DCOS(PI*x(i))
 		ENDDO
 		uedge(:,:) = (psiu_edge(:,:,2)-psiu_edge(:,:,1))/dymin
 		vedge(:,:) = -(psiv_edge(:,:,2)-psiv_edge(:,:,1))/dxmin
@@ -485,9 +539,10 @@ CONTAINS
 					ENDDO
 				ENDDO
 
-			CASE(6)	! smoothed cosbell deformation
+			CASE(6,10)	! smoothed cosbell deformation
 				cdf_out = 'dg2d_smth_cosbell.nc'
 				tfinal = 5D0
+!				tfinal = 1D0
 
 				DO j = 1,nyplot
 				r(:,j) = 3.d0*sqrt((xplot(:)-0.4d0)**2 + (yplot(j)-0.4d0)**2)
@@ -518,6 +573,41 @@ CONTAINS
 						ENDDO
 					ENDDO
 				ENDDO
+
+			CASE(7) ! square wave
+				cdf_out = 'dg2d_fdef_sqwave.nc'
+				tfinal = 5D0
+
+				DO j=1,nyplot
+					r(:,j) = MAX(ABS(x-0.3d0),ABS(y(j)-0.5d0))/0.15d0
+				ENDDO
+			    q = 0.d0
+			    WHERE (r.lt.1.d0)
+			    		q = 1.d0
+			    END WHERE
+
+				DO i=1,nex
+					DO j=1,ney
+						DO l=0,dgorder
+						DO m=0,dgorder
+							DO s=0,dgorder
+ 							DO t=0,dgorder
+						r_s = MAX(ABS(x(1+s+(i-1)*(dgorder+1))-0.3d0),ABS(y(1+t+(j-1)*(dgorder+1))-0.5d0))/0.15d0
+						ph = 0D0
+						IF(r_s .lt. 1D0) THEN
+							ph = 1D0
+						ENDIF
+		
+		FOO(s,t) = qweights(s)*qweights(t)*ph*Leg(s,l)*Leg(t,m)
+
+							ENDDO
+							ENDDO
+		A(i,j,l,m) = ((2D0*l+1)*(2D0*m+1)/4D0)*SUM(FOO)
+						ENDDO
+						ENDDO
+					ENDDO
+				ENDDO
+			
 		ENDSELECT
 	END SUBROUTINE init2d
 
