@@ -23,8 +23,9 @@ PROGRAM execute
 	write(*,*) '======'
 
 	transient = .FALSE.
-	start_res = 8 ! Number of elements in each direction
-	CALL test2d_modal(10,start_res,start_res,2,3,20,0.1D0) !1D0/(2D0*4D0-1D0) !0.3D0/sqrt(2d0)
+!	transient = .TRUE.
+	start_res = 20 ! Number of elements in each direction
+!	CALL test2d_modal(1,start_res,start_res,2,3,20,0.1D0) !1D0/(2D0*4D0-1D0) !0.3D0/sqrt(2d0)
 
 	write(*,*) '======'
 	write(*,*) 'TEST 2: Smooth cosbell deformation'
@@ -32,7 +33,7 @@ PROGRAM execute
 
 	transient = .TRUE.
 !	transient = .FALSE.
-!	CALL test2d_modal(6,start_res,start_res,2,3,20,0.01D0) !1D0/(2D0*4D0-1D0)
+	CALL test2d_modal(6,start_res,start_res,2,3,20,0.1D0) !1D0/(2D0*4D0-1D0)
 
 	write(*,*) '======'
 	write(*,*) 'TEST 3: Standard cosbell deformation'
@@ -61,7 +62,7 @@ CONTAINS
 	    REAL(KIND=8), DIMENSION(nlevel) :: e1, e2, ei
 		REAL(KIND=8) :: cnvg1, cnvg2, cnvgi
 		INTEGER :: nmethod, nmethod_final, imethod,ierr,nstep, nout
-		INTEGER :: dgorder, p
+		INTEGER :: dgorder, norder,p
 
 		CHARACTER(len=40) :: cdf_out
 
@@ -95,24 +96,25 @@ CONTAINS
 				CASE(1)
 				  WRITE(*,*) '2D Modal, Unsplit, No limiting'
 				  outdir = 'mdgunlim/'
-				  dgorder = 4
-				  WRITE(*,*) 'N=',dgorder,'Uses a total of',(dgorder+1)**2,'Legendre basis polynomials'
+				  norder = 3
+				  dgorder = 2*(norder+1)
+				  WRITE(*,*) 'N=',norder,'Uses a total of',(norder+1)**2,'Legendre basis polynomials'
 			END SELECT
 
 			! Initialize quadrature weights and nodes (only done once per call)
-			ALLOCATE(qnodes(0:dgorder),qweights(0:dgorder), Leg(0:dgorder,0:dgorder), dLeg(0:dgorder,0:dgorder), &
-					LL(0:dgorder,0:dgorder,0:dgorder,0:dgorder), dLL(0:dgorder,0:dgorder,0:dgorder,0:dgorder), &
+			ALLOCATE(qnodes(0:dgorder),qweights(0:dgorder), Leg(0:dgorder,0:norder), dLeg(0:dgorder,0:norder), &
+					LL(0:norder,0:norder,0:dgorder,0:dgorder), dLL(0:norder,0:norder,0:dgorder,0:dgorder), &
 					STAT=ierr)
-			ALLOCATE(foo(0:dgorder,0:dgorder), STAT=ierr)
+!			ALLOCATE(foo(0:dgorder,0:dgorder), STAT=ierr)
 	        CALL quad_nodes(dgorder+1,qnodes)
 			CALL quad_weights(dgorder+1,qnodes,qweights)
 
-			nxiplot = dgorder+1
-			netaplot = dgorder+1
+			nxiplot = norder+1
+			netaplot = norder+1
 			dxiplot = 2D0/DBLE(nxiplot) ! 2D0 because each element gets mapped to [-1,1]
 			detaplot = 2D0/DBLE(netaplot)
 
-			ALLOCATE(xiplot(1:nxiplot), etaplot(1:netaplot), L_xi_plot(1:nxiplot,0:dgorder),L_eta_plot(1:netaplot,0:dgorder), STAT=ierr)
+			ALLOCATE(xiplot(1:nxiplot), etaplot(1:netaplot), L_xi_plot(1:nxiplot,0:norder),L_eta_plot(1:netaplot,0:norder), STAT=ierr)
 
 			xiplot(1) = dxiplot/2D0 - 1D0
 			DO i=2,nxiplot
@@ -129,26 +131,26 @@ CONTAINS
 
 			! Precompute Legendre basis evaluated at quadrature points and plotting points
 			DO i=1,nxiplot
-				DO j=0,dgorder
+				DO j=0,norder
 					L_xi_plot(i,j) = legendre(xiplot(i),j)
 				ENDDO
 			ENDDO
 			
 			DO i=1,netaplot
-				DO j=0,dgorder
+				DO j=0,norder
 					L_eta_plot(i,j) = legendre(etaplot(i),j)
 				ENDDO
 			ENDDO
 
 			DO i=0,dgorder
-				DO j=0,dgorder
+				DO j=0,norder
 					Leg(i,j) = legendre(qnodes(i),j)
 					dLeg(i,j) = dlegendre(qnodes(i),j)
 				ENDDO
 			ENDDO
 
-			DO l=0,dgorder
-				DO m=0,dgorder
+			DO l=0,norder
+				DO m=0,norder
 					DO s=0,dgorder
 						DO t=0,dgorder
 							LL(l,m,s,t) = Leg(s,l)*Leg(t,m)
@@ -175,7 +177,7 @@ CONTAINS
 
 
 				ALLOCATE(q(1:nxplot,1:nyplot),q0(1:nxplot,1:nyplot),x_elcent(1:nex),y_elcent(1:ney), xplot(1:nxplot), yplot(1:nyplot), &
-						 A(1:nex,1:ney,0:dgorder,0:dgorder), u(1:(dgorder+1)*nex,1:(dgorder+1)*ney), & 
+						 A(1:nex,1:ney,0:norder,0:norder), u(1:(dgorder+1)*nex,1:(dgorder+1)*ney), & 
 						 u_tmp(1:(dgorder+1)*nex,1:(dgorder+1)*ney), v(1:(dgorder+1)*nex,1:(dgorder+1)*ney),	&
 						 v_tmp(1:(dgorder+1)*nex,1:(dgorder+1)*ney), uedge(1:nex,1:(dgorder+1)*ney), &
 						 uedge_tmp(1:nex,1:(dgorder+1)*ney), vedge(1:(dgorder+1)*nex,1:ney), vedge_tmp(1:(dgorder+1)*nex,1:ney),&
@@ -212,31 +214,9 @@ CONTAINS
 				
 				! Initialize q, A, u, and v
 
-				CALL init2d(ntest,nex,ney,nxplot,nyplot,dgorder,A,q0,u,v,uedge,vedge,x_elcent,y_elcent,xplot,yplot, &
+				CALL init2d(ntest,nex,ney,nxplot,nyplot,dgorder,norder,A,q0,u,v,uedge,vedge,x_elcent,y_elcent,xplot,yplot, &
 							qnodes,qweights,Leg,cdf_out,tfinal)
-go to 105
-foo = 0D0
-	DO i=1,nex
-	DO j=1,ney
 
-		DO s=1,nxiplot
-		DO t=1,netaplot
-
-			DO l=0,dgorder
-			DO m=0,dgorder
-
-				FOO(l,m) = A(i,j,l,m)*L_xi_plot(s,l)*L_eta_plot(t,m)
-
-			ENDDO
-			ENDDO
-	
-			q0(s+(i-1)*nxiplot,t+(j-1)*netaplot) = SUM(FOO)
-
-		ENDDO
-		ENDDO
-	ENDDO
-	ENDDO
-105 continue
 				! Store element averages for conservation estimation
 				DO i=1,nex
 					DO j=1,ney
@@ -248,6 +228,10 @@ foo = 0D0
 				v_tmp = v
 				uedge_tmp = uedge
 				vedge_tmp = vedge
+!				u_tmp = 1D0
+!				v_tmp = 1D0
+!				uedge_tmp = 1D0
+!				vedge_tmp = 1D0
 
 				cdf_out = outdir // cdf_out
 
@@ -262,11 +246,11 @@ foo = 0D0
 
 				IF(noutput .eq. -1) THEN
 !					nstep = CEILING( (tfinal/maxcfl)*(tmp_umax/dxm + tmp_vmax/dym) )
-					nstep = CEILING( (tfinal/maxcfl)*(tmp_umax + tmp_vmax)/(dxm*dym) )
+					nstep = CEILING( (tfinal/maxcfl)*(tmp_umax + tmp_vmax)/(dxm) )
 					nout = nstep
 				ELSE
 !					nstep = noutput*CEILING( (tfinal/maxcfl)*(tmp_umax/dxm + tmp_vmax/dym)/DBLE(noutput) )
-					nstep = noutput*CEILING( (tfinal/maxcfl)*(tmp_umax + tmp_vmax)/(dxm*dym)/DBLE(noutput) )
+					nstep = noutput*CEILING( (tfinal/maxcfl)*(tmp_umax + tmp_vmax)/(dxm)/DBLE(noutput) )
 					nout = noutput
 				ENDIF
 
@@ -285,16 +269,8 @@ foo = 0D0
 				time = 0D0
 				DO n=1,nstep
 
-					IF( transient ) THEN
-						! Update velocities
-						u = u_tmp*vel_update(time)
-						uedge = uedge_tmp*vel_update(time)
-						v = v_tmp*vel_update(time)
-						vedge = vedge_tmp*vel_update(time)
-					ENDIF
-					CALL coeff_update(q,A,u,v,uedge,vedge,qnodes,qweights,Leg,dLL,LL,L_xi_plot,L_eta_plot,dxel,dyel,& 
-									  dt,dgorder,nxplot,nyplot,nex,ney,nxiplot,netaplot)
-
+					CALL coeff_update(q,A,u_tmp,v_tmp,uedge_tmp,vedge_tmp,qnodes,qweights,Leg,dLL,LL,L_xi_plot,L_eta_plot,dxel,dyel,& 
+									  dt,dgorder,norder,nxplot,nyplot,nex,ney,nxiplot,netaplot,transient,time)
 
 					! Store element averages for conservation estimation (for modal DG these are just the 0th order coeffs)
 					DO i=1,nex
@@ -308,6 +284,7 @@ foo = 0D0
 	
 					IF((MOD(n,nstep/nout).eq.0).OR.(n.eq.nstep)) THEN
 						! Write output
+						write(*,*) 'Outputting at time t=',time
 						CALL output2d(q,xplot,yplot,nxplot,nyplot,time,cdf_out,p,2)
 					ENDIF
 					
@@ -335,7 +312,7 @@ foo = 0D0
 				tf = etime(tend) - t0
 				if (p.eq.1) then
 					write(UNIT=6,FMT='(A117)') &
-'   nex    ney      E1        E2       Einf      convergence rate  overshoot  undershoot   cons cputime   time step'
+'nex    ney      E1        E2       Einf      convergence rate  overshoot  undershoot    cons   cputime   time step'
 					cnvg1 = 0.d0
 					cnvg2 = 0.d0
 					cnvgi = 0.d0
@@ -364,21 +341,21 @@ foo = 0D0
 
 	END SUBROUTINE test2d_modal
 
-	SUBROUTINE init2d(ntest,nex,ney,nxplot,nyplot,dgorder,A,q,u,v,uedge,vedge,x_elcent,y_elcent,xplot,yplot, &
+	SUBROUTINE init2d(ntest,nex,ney,nxplot,nyplot,dgorder,norder,A,q,u,v,uedge,vedge,x_elcent,y_elcent,xplot,yplot, &
 					  qnodes,qweights,Leg,cdf_out,tfinal)
 		IMPLICIT NONE
 		! Inputs
-		INTEGER, INTENT(IN) :: ntest,nex,ney,nxplot,nyplot,dgorder
+		INTEGER, INTENT(IN) :: ntest,nex,ney,nxplot,nyplot,dgorder,norder
 		REAL(KIND=8), DIMENSION(1:nex), INTENT(IN) :: x_elcent
 		REAL(KIND=8), DIMENSION(1:ney), INTENT(IN) :: y_elcent
 		REAL(KIND=8), DIMENSION(1:nxplot), INTENT(IN) :: xplot
 		REAL(KIND=8), DIMENSION(1:nyplot), INTENT(IN) :: yplot
 		REAL(KIND=8), DIMENSION(0:dgorder), INTENT(IN) :: qnodes,qweights
-		REAL(KIND=8), DIMENSION(0:dgorder,0:dgorder), INTENT(IN) :: Leg
+		REAL(KIND=8), DIMENSION(0:dgorder,0:norder), INTENT(IN) :: Leg
 
 		! Ouputs
 		REAL(KIND=8), INTENT(OUT) :: tfinal
-		REAL(KIND=8), DIMENSION(1:nex,1:ney,0:dgorder,0:dgorder), INTENT(OUT) ::  A
+		REAL(KIND=8), DIMENSION(1:nex,1:ney,0:norder,0:norder), INTENT(OUT) ::  A
 		REAL(KIND=8), DIMENSION(1:nxplot,1:nyplot), INTENT(OUT) :: q
 		REAL(KIND=8), DIMENSION(1:(dgorder+1)*nex,1:(dgorder+1)*ney) , INTENT(OUT):: u,v
 		REAL(KIND=8), DIMENSION(1:nex,1:(dgorder+1)*ney), INTENT(OUT) :: uedge
@@ -489,8 +466,8 @@ foo = 0D0
 
 				DO i=1,nex
 					DO j=1,ney
-						DO l=0,dgorder
-						DO m=0,dgorder
+						DO l=0,norder
+						DO m=0,norder
 							DO s=0,dgorder
  							DO t=0,dgorder
 		FOO(s,t) = qweights(s)*qweights(t)*DSIN(2D0*PI*x(1+s+(i-1)*(dgorder+1)))*DSIN(2D0*PI*y(1+t+(j-1)*(dgorder+1)))* &
@@ -518,8 +495,8 @@ foo = 0D0
 
 				DO i=1,nex
 					DO j=1,ney
-						DO l=0,dgorder
-						DO m=0,dgorder
+						DO l=0,norder
+						DO m=0,norder
 							DO s=0,dgorder
  							DO t=0,dgorder
 
@@ -540,9 +517,9 @@ foo = 0D0
 				ENDDO
 
 			CASE(6,10)	! smoothed cosbell deformation
-				cdf_out = 'dg2d_smth_cosbell.nc'
+				cdf_out = 'dg2d_smth_cosbell_rk4.nc'
 				tfinal = 5D0
-!				tfinal = 1D0
+!				tfinal = (sqrt(3.D0)-1D0)
 
 				DO j = 1,nyplot
 				r(:,j) = 3.d0*sqrt((xplot(:)-0.4d0)**2 + (yplot(j)-0.4d0)**2)
@@ -554,8 +531,8 @@ foo = 0D0
 
 				DO i=1,nex
 					DO j=1,ney
-						DO l=0,dgorder
-						DO m=0,dgorder
+						DO l=0,norder
+						DO m=0,norder
 							DO s=0,dgorder
  							DO t=0,dgorder
 						r_s = 3D0*SQRT( (x(1+s+(i-1)*(dgorder+1))-0.4D0)**2 + (y(1+t+(j-1)*(dgorder+1))-0.4D0)**2 )
@@ -588,8 +565,8 @@ foo = 0D0
 
 				DO i=1,nex
 					DO j=1,ney
-						DO l=0,dgorder
-						DO m=0,dgorder
+						DO l=0,norder
+						DO m=0,norder
 							DO s=0,dgorder
  							DO t=0,dgorder
 						r_s = MAX(ABS(x(1+s+(i-1)*(dgorder+1))-0.3d0),ABS(y(1+t+(j-1)*(dgorder+1))-0.5d0))/0.15d0
@@ -710,13 +687,4 @@ foo = 0D0
 
 	END SUBROUTINE output2d
 
-	REAL(KIND=8) FUNCTION vel_update(t)
-		IMPLICIT NONE
-		REAL(KIND=8), INTENT(IN) :: t
-	    REAL(KIND=8) :: pi
-	    REAL(KIND=8), parameter :: t_period = 5.d0
-
-	    pi = DACOS(-1D0)
-	    vel_update = DCOS(pi*t/t_period)
-	END FUNCTION vel_update
 END PROGRAM execute
