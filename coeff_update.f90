@@ -10,7 +10,7 @@
 ! ==========================================
 
 SUBROUTINE coeff_update(q,A,u_tmp,v_tmp,uedge_tmp,vedge_tmp,qnodes,qweights,Leg,dLL,LL,L_xi_plot,L_eta_plot,dxel,dyel,&
-						dt,dgorder,norder,nxplot,nyplot,nex,ney,nxiplot,netaplot,transient,time)
+						dt,dgorder,norder,nxplot,nyplot,nex,ney,nxiplot,netaplot,transient,time,dozshulimit)
 	IMPLICIT NONE
 
 	! External functions
@@ -28,14 +28,14 @@ SUBROUTINE coeff_update(q,A,u_tmp,v_tmp,uedge_tmp,vedge_tmp,qnodes,qweights,Leg,
 	REAL(KIND=8), DIMENSION(0:norder,0:norder,0:dgorder,0:dgorder), INTENT(IN) :: LL,dLL
 	REAL(KIND=8), DIMENSION(1:nxiplot,0:norder), INTENT(IN) :: L_xi_plot
 	REAL(KIND=8), DIMENSION(1:netaplot,0:norder), INTENT(IN) :: L_eta_plot
-	LOGICAL, INTENT(IN) :: transient
+	LOGICAL, INTENT(IN) :: transient,dozshulimit
 
 	! Outputs
 	REAL(KIND=8), DIMENSION(1:nxplot,1:nyplot), INTENT(OUT) :: q
 	REAL(KIND=8), DIMENSION(1:nex,1:ney,0:norder,0:norder), INTENT(INOUT) :: A
 
 	! Local variables
-	REAL(KIND=8), DIMENSION(1:nex,1:ney,0:norder,0:norder) :: A1,A2,A3,A4,A_tmp
+	REAL(KIND=8), DIMENSION(1:nex,1:ney,0:norder,0:norder) :: A1,A2
 	REAL(KIND=8), DIMENSION(1:(dgorder+1)*nex,1:(dgorder+1)*ney) :: u,v
 	REAL(KIND=8), DIMENSION(1:nex,1:(dgorder+1)*ney) :: uedge
 	REAL(KIND=8), DIMENSION(1:(dgorder+1)*nex,1:ney) :: vedge
@@ -52,8 +52,7 @@ SUBROUTINE coeff_update(q,A,u_tmp,v_tmp,uedge_tmp,vedge_tmp,qnodes,qweights,Leg,
 !go to 100
 !---------
 
-!	coef1 = dt/dxel/dyel
-	coef1 = 1d0/dxel/dyel
+	coef1 = dt/dxel/dyel
 	! ######################
 	! Time step using Strong-Stability Preserving RK3
 	! ######################
@@ -76,10 +75,8 @@ SUBROUTINE coeff_update(q,A,u_tmp,v_tmp,uedge_tmp,vedge_tmp,qnodes,qweights,Leg,
 
 		DO l=0,norder
 		DO m=0,norder
-	!		A1(i,j,l,m) = A(i,j,l,m)+ &
-	!				coef1*dadt(i,j,l,m,R,Fhat,Ghat,u_int,v_int,qweights,LL,dLL,Leg,dxel,dyel,dgorder,norder,nex,ney)
-
-			A1(i,j,l,m) = coef1*dadt(i,j,l,m,R,Fhat,Ghat,u_int,v_int,qweights,LL,dLL,Leg,dxel,dyel,dgorder,norder,nex,ney)
+			A1(i,j,l,m) = A(i,j,l,m)+ &
+					coef1*dadt(i,j,l,m,R,Fhat,Ghat,u_int,v_int,qweights,LL,dLL,Leg,dxel,dyel,dgorder,norder,nex,ney)
 		ENDDO
 		ENDDO
 	ENDDO
@@ -87,29 +84,26 @@ SUBROUTINE coeff_update(q,A,u_tmp,v_tmp,uedge_tmp,vedge_tmp,qnodes,qweights,Leg,
 
 	IF( transient ) THEN
 	! Update velocities
-		u = u_tmp *vel_update(time+dt/2d0)
-		uedge = uedge_tmp*vel_update(time+dt/2d0)
-		v = v_tmp*vel_update(time+dt/2d0)
-		vedge = vedge_tmp*vel_update(time+dt/2d0)
+		u = u_tmp *vel_update(time+dt)
+		uedge = uedge_tmp*vel_update(time+dt)
+		v = v_tmp*vel_update(time+dt)
+		vedge = vedge_tmp*vel_update(time+dt)
 	ENDIF
 
-	A_tmp = A + dt*A1/2d0
 	! Update fluxes
-	CALL numflx(A_tmp,Ghat,Fhat,uedge,vedge,Leg,dgorder,norder,nex,ney)
+	CALL numflx(A1,Ghat,Fhat,uedge,vedge,Leg,dgorder,norder,nex,ney)
 	! Perform second step of ssprk3
 	DO i=1,nex
 	DO j=1,ney
 		u_int = u(1+(i-1)*(dgorder+1):i*(dgorder+1),1+(j-1)*(dgorder+1):j*(dgorder+1))
 		v_int = v(1+(i-1)*(dgorder+1):i*(dgorder+1),1+(j-1)*(dgorder+1):j*(dgorder+1))
-		CALL R_fill(R,A_tmp(i,j,:,:),LL,dgorder,norder)
+		CALL R_fill(R,A1(i,j,:,:),LL,dgorder,norder)
 
 		DO l=0,norder
 		DO m=0,norder
-!			A2(i,j,l,m) = (0.75D0)*A(i,j,l,m) + (0.25D0)*(A1(i,j,l,m) + &
-!						coef1*dadt(i,j,l,m,R,Fhat,Ghat,u_int,v_int,qweights,LL,dLL,Leg, &
-!						dxel,dyel,dgorder,norder,nex,ney))
-			A2(i,j,l,m) = coef1*dadt(i,j,l,m,R,Fhat,Ghat,u_int,v_int,qweights,LL,dLL,Leg, &
-						dxel,dyel,dgorder,norder,nex,ney)
+			A2(i,j,l,m) = (0.75D0)*A(i,j,l,m) + (0.25D0)*(A1(i,j,l,m) + &
+						coef1*dadt(i,j,l,m,R,Fhat,Ghat,u_int,v_int,qweights,LL,dLL,Leg, &
+						dxel,dyel,dgorder,norder,nex,ney))
 		ENDDO
 		ENDDO
 	ENDDO
@@ -122,61 +116,25 @@ SUBROUTINE coeff_update(q,A,u_tmp,v_tmp,uedge_tmp,vedge_tmp,qnodes,qweights,Leg,
 		v = v_tmp*vel_update(time+dt/2d0)
 		vedge = vedge_tmp*vel_update(time+dt/2d0)
 	ENDIF
-	A_tmp = A + dt*A2/2d0
 
 	! Update fluxes, fill R array
-	CALL numflx(A_tmp,Ghat,Fhat,uedge,vedge,Leg,dgorder,norder,nex,ney)
+	CALL numflx(A2,Ghat,Fhat,uedge,vedge,Leg,dgorder,norder,nex,ney)
 	! Perform final step of ssprk3
 	DO i=1,nex
 	DO j=1,ney
 		u_int = u(1+(i-1)*(dgorder+1):i*(dgorder+1),1+(j-1)*(dgorder+1):j*(dgorder+1))
 		v_int = v(1+(i-1)*(dgorder+1):i*(dgorder+1),1+(j-1)*(dgorder+1):j*(dgorder+1))
-		CALL R_fill(R,A_tmp(i,j,:,:),LL,dgorder,norder)
+		CALL R_fill(R,A2(i,j,:,:),LL,dgorder,norder)
 
 		DO l=0,norder
 		DO m=0,norder
-!			A(i,j,l,m) = A(i,j,l,m)/3D0 + (2D0/3D0)*(A2(i,j,l,m) + &
-!						coef1*dadt(i,j,l,m,R,Fhat,Ghat,u_int,v_int,qweights,LL,dLL,Leg, &
-!						dxel,dyel,dgorder,norder,nex,ney))
-			A3(i,j,l,m) = coef1*dadt(i,j,l,m,R,Fhat,Ghat,u_int,v_int,qweights,LL,dLL,Leg, &
-						      dxel,dyel,dgorder,norder,nex,ney)
+			A(i,j,l,m) = A(i,j,l,m)/3D0 + (2D0/3D0)*(A2(i,j,l,m) + &
+						coef1*dadt(i,j,l,m,R,Fhat,Ghat,u_int,v_int,qweights,LL,dLL,Leg, &
+						dxel,dyel,dgorder,norder,nex,ney))
 		ENDDO
 		ENDDO
 	ENDDO
 	ENDDO
-
-	!OPTIONAL RK4 STEP
-	IF( transient ) THEN
-	! Update velocities
-		u = u_tmp*vel_update(time+dt)
-		uedge = uedge_tmp*vel_update(time+dt)
-		v = v_tmp*vel_update(time+dt)
-		vedge = vedge_tmp*vel_update(time+dt)
-	ENDIF
-	A_tmp = A + dt*A3
-
-	! Update fluxes, fill R array
-	CALL numflx(A_tmp,Ghat,Fhat,uedge,vedge,Leg,dgorder,norder,nex,ney)
-	! Perform final step of ssprk3
-	DO i=1,nex
-	DO j=1,ney
-		u_int = u(1+(i-1)*(dgorder+1):i*(dgorder+1),1+(j-1)*(dgorder+1):j*(dgorder+1))
-		v_int = v(1+(i-1)*(dgorder+1):i*(dgorder+1),1+(j-1)*(dgorder+1):j*(dgorder+1))
-		CALL R_fill(R,A_tmp(i,j,:,:),LL,dgorder,norder)
-
-		DO l=0,norder
-		DO m=0,norder
-!			A(i,j,l,m) = A(i,j,l,m)/3D0 + (2D0/3D0)*(A2(i,j,l,m) + &
-!						coef1*dadt(i,j,l,m,R,Fhat,Ghat,u_int,v_int,qweights,LL,dLL,Leg, &
-!						dxel,dyel,dgorder,norder,nex,ney))
-			A4(i,j,l,m) = coef1*dadt(i,j,l,m,R,Fhat,Ghat,u_int,v_int,qweights,LL,dLL,Leg, &
-						      dxel,dyel,dgorder,norder,nex,ney)
-		ENDDO
-		ENDDO
-	ENDDO
-	ENDDO
-
-	A = A + dt/6d0*(A1+2D0*A2+2D0*A3+A4)
 
 	! #########
 	! END SPPRK3 TIMESTEP ; BEGIN FILLING q ARRAY

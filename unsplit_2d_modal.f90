@@ -16,7 +16,15 @@ PROGRAM execute
 	IMPLICIT NONE
 
 	INTEGER :: ntest,start_res
-	LOGICAL :: transient
+	LOGICAL :: transient,dotimesteptest
+
+	write(*,*) '======'
+	write(*,*) 'TEST 0: Uniform field, deformation flow'
+	write(*,*) '======'
+	transient = .TRUE.
+	start_res = 8
+	CALL test2d_modal(100,start_res,start_res,2,3,20,0.01D0)
+
 
 	write(*,*) '======'
 	write(*,*) 'TEST 1: Uniform advection (u=v=1)'
@@ -24,7 +32,7 @@ PROGRAM execute
 
 	transient = .FALSE.
 !	transient = .TRUE.
-	start_res = 20 ! Number of elements in each direction
+	start_res = 8 ! Number of elements in each direction
 !	CALL test2d_modal(1,start_res,start_res,2,3,20,0.1D0) !1D0/(2D0*4D0-1D0) !0.3D0/sqrt(2d0)
 
 	write(*,*) '======'
@@ -32,8 +40,8 @@ PROGRAM execute
 	write(*,*) '======'
 
 	transient = .TRUE.
-!	transient = .FALSE.
-	CALL test2d_modal(6,start_res,start_res,2,3,20,0.1D0) !1D0/(2D0*4D0-1D0)
+!	dotimesteptest = .TRUE.
+!	CALL test2d_modal(6,start_res,start_res,2,2,20,1D0/(2D0*4D0+1D0)) !1D0/(2D0*4D0-1D0)
 
 	write(*,*) '======'
 	write(*,*) 'TEST 3: Standard cosbell deformation'
@@ -47,7 +55,7 @@ PROGRAM execute
 	write(*,*) '======'
 	
 	transient = .TRUE.
-!	CALL test2d_modal(7,start_res,start_res,2,3,20,0.01D0) !1D0/(2D0*4D0-1D0)
+!	CALL test2d_modal(7,start_res,start_res,2,3,20,1D0/(2D0*4D0-1D0)) !1D0/(2D0*4D0-1D0)
 
 CONTAINS
 
@@ -63,6 +71,8 @@ CONTAINS
 		REAL(KIND=8) :: cnvg1, cnvg2, cnvgi
 		INTEGER :: nmethod, nmethod_final, imethod,ierr,nstep, nout
 		INTEGER :: dgorder, norder,p
+
+		LOGICAL :: dozshulimit
 
 		CHARACTER(len=40) :: cdf_out
 
@@ -95,9 +105,17 @@ CONTAINS
 			SELECT CASE(imethod)
 				CASE(1)
 				  WRITE(*,*) '2D Modal, Unsplit, No limiting'
+				  dozshulimit = .FALSE.
 				  outdir = 'mdgunlim/'
-				  norder = 3
-				  dgorder = 2*(norder+1)
+				  norder = 4
+				  dgorder = norder !2*(norder+1)
+				  WRITE(*,*) 'N=',norder,'Uses a total of',(norder+1)**2,'Legendre basis polynomials'
+				CASE(2)
+				  WRITE(*,*) '2D Modal, Unsplit, Zhang and Shu Limiting'
+				  dozshulimit = .TRUE.
+				  outdir = 'mdgzhshu/'
+				  norder = 4
+				  dgorder = norder
 				  WRITE(*,*) 'N=',norder,'Uses a total of',(norder+1)**2,'Legendre basis polynomials'
 			END SELECT
 
@@ -245,12 +263,21 @@ CONTAINS
 				tmp_vmax = MAX(MAXVAL(DABS(v)),MAXVAL(DABS(vedge)))
 
 				IF(noutput .eq. -1) THEN
-!					nstep = CEILING( (tfinal/maxcfl)*(tmp_umax/dxm + tmp_vmax/dym) )
+
 					nstep = CEILING( (tfinal/maxcfl)*(tmp_umax + tmp_vmax)/(dxm) )
+
 					nout = nstep
+
 				ELSE
-!					nstep = noutput*CEILING( (tfinal/maxcfl)*(tmp_umax/dxm + tmp_vmax/dym)/DBLE(noutput) )
+					if(dotimesteptest) then
+						tfinal = 4*50
+!						nstep = 434*2**(p-1)!int(sqrt(2d0)*304)*2**(p-1) + 1
+						nstep = 4*4340*2**(p-1)
+go to 999
+					endif
+
 					nstep = noutput*CEILING( (tfinal/maxcfl)*(tmp_umax + tmp_vmax)/(dxm)/DBLE(noutput) )
+999 continue
 					nout = noutput
 				ENDIF
 
@@ -270,7 +297,7 @@ CONTAINS
 				DO n=1,nstep
 
 					CALL coeff_update(q,A,u_tmp,v_tmp,uedge_tmp,vedge_tmp,qnodes,qweights,Leg,dLL,LL,L_xi_plot,L_eta_plot,dxel,dyel,& 
-									  dt,dgorder,norder,nxplot,nyplot,nex,ney,nxiplot,netaplot,transient,time)
+									  dt,dgorder,norder,nxplot,nyplot,nex,ney,nxiplot,netaplot,transient,time,dozshulimit)
 
 					! Store element averages for conservation estimation (for modal DG these are just the 0th order coeffs)
 					DO i=1,nex
@@ -284,30 +311,19 @@ CONTAINS
 	
 					IF((MOD(n,nstep/nout).eq.0).OR.(n.eq.nstep)) THEN
 						! Write output
-						write(*,*) 'Outputting at time t=',time
 						CALL output2d(q,xplot,yplot,nxplot,nyplot,time,cdf_out,p,2)
 					ENDIF
 					
 					tmp_qmax = MAX(tmp_qmax,MAXVAL(q))
 					tmp_qmin = MIN(tmp_qmin,MINVAL(q))
+!					if(abs(tmp_qmax) .ge. 10.0**10) then
+!						write(*,*) 'BIG UNDERSHOOT:',tmp_qmax,'t=',time
+!					endif 
 
 				ENDDO
 
 				e1(p) = SUM(ABS(q(1:nxplot,1:nyplot)-q0))/DBLE(nxplot)/DBLE(nyplot)
 				e2(p) = SQRT(SUM((q(1:nxplot,1:nyplot)-q0)**2)/DBLE(nxplot)/DBLE(nyplot))
-!e2(p)=0D0
-!do i = 1,nex
-!do j = 1,ney
-!	do l=0,dgorder
-!	do m=0,dgorder
-!foo(l,m) = qweights(l)*qweights(m)*(q(1+l+(i-1)*nxiplot,1+m+(j-1)*netaplot)-q0(1+l+(i-1)*nxiplot,1+m+(j-1)*netaplot))**2
-!	enddo
-!	enddo
-!e2(p) = e2(p)+sum(foo)
-!enddo
-!enddo
-!e2(p) = sqrt(e2(p))
-
 				ei(p) = MAXVAL(ABS(q(1:nxplot,1:nyplot)-q0))
 				tf = etime(tend) - t0
 				if (p.eq.1) then
@@ -421,7 +437,7 @@ CONTAINS
 					psiv_edge(i,1:ney,2) = (y_elcent(:) + dyel/2D0) - (x(i)+dxmin/2D0)					
 				ENDDO
 
-			CASE(5:7) ! Leveque deformation flow
+			CASE(5:7,100) ! Leveque deformation flow
 				!(1/pi)*sin(pi*xf(i))**2 * sin(pi*yf(j))**2
 				DO j=1,(dgorder+1)*ney
 					psiu(:,j,1) = (1/PI)*DSIN(PI*x(:))**2 * DSIN(PI*(y(j)-dymin/2D0))**2
@@ -443,11 +459,9 @@ CONTAINS
 		! Compute velocity from stream functions
 		DO j=1,(dgorder+1)*ney
 			u(:,j) = (psiu(:,j,2)-psiu(:,j,1))/dymin
-!			u(:,j) = 2D0*DSIN(PI*x(:))**2 * DCOS(PI*y(j))
 		ENDDO
 		DO i=1,(dgorder+1)*nex
 			v(i,:) = -(psiv(i,:,2)-psiv(i,:,1))/dxmin
-!			v(i,:) = -2D0*DSIN(PI*y(:))**2 * DCOS(PI*x(i))
 		ENDDO
 		uedge(:,:) = (psiu_edge(:,:,2)-psiu_edge(:,:,1))/dymin
 		vedge(:,:) = -(psiv_edge(:,:,2)-psiv_edge(:,:,1))/dxmin
@@ -517,9 +531,8 @@ CONTAINS
 				ENDDO
 
 			CASE(6,10)	! smoothed cosbell deformation
-				cdf_out = 'dg2d_smth_cosbell_rk4.nc'
+				cdf_out = 'dg2d_smth_cosbell.nc'
 				tfinal = 5D0
-!				tfinal = (sqrt(3.D0)-1D0)
 
 				DO j = 1,nyplot
 				r(:,j) = 3.d0*sqrt((xplot(:)-0.4d0)**2 + (yplot(j)-0.4d0)**2)
@@ -582,6 +595,17 @@ CONTAINS
 		A(i,j,l,m) = ((2D0*l+1)*(2D0*m+1)/4D0)*SUM(FOO)
 						ENDDO
 						ENDDO
+					ENDDO
+				ENDDO
+
+			CASE(100) ! Uniform field
+				cdf_out = 'dg2d_uniform.nc'
+				q = 1D0
+				tfinal = 5D0
+				A = 0D0
+				DO i=1,nex
+					DO j=1,ney
+						A(i,j,0,0) = 1D0
 					ENDDO
 				ENDDO
 			
