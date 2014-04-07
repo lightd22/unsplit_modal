@@ -23,17 +23,15 @@ PROGRAM execute
 	write(*,*) '======'
 	transient = .TRUE.
 	start_res = 8
-	CALL test2d_modal(100,start_res,start_res,2,3,20,0.01D0)
-
+!	CALL test2d_modal(100,start_res,start_res,2,3,20,0.01D0)
 
 	write(*,*) '======'
 	write(*,*) 'TEST 1: Uniform advection (u=v=1)'
 	write(*,*) '======'
 
 	transient = .FALSE.
-!	transient = .TRUE.
 	start_res = 8 ! Number of elements in each direction
-!	CALL test2d_modal(1,start_res,start_res,2,3,20,0.1D0) !1D0/(2D0*4D0-1D0) !0.3D0/sqrt(2d0)
+	CALL test2d_modal(1,start_res,start_res,2,3,20,0.01D0) !1D0/(2D0*4D0-1D0) !0.3D0/sqrt(2d0)
 
 	write(*,*) '======'
 	write(*,*) 'TEST 2: Smooth cosbell deformation'

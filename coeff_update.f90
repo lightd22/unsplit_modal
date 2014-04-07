@@ -44,13 +44,16 @@ SUBROUTINE coeff_update(q,A,u_tmp,v_tmp,uedge_tmp,vedge_tmp,qnodes,qweights,Leg,
 	REAL(KIND=8), DIMENSION(1:nex,0:ney,0:dgorder) :: Ghat
 	REAL(KIND=8), DIMENSION(0:norder,0:norder) :: FOO2D
 	REAL(KIND=8) :: coef1
+
+	REAL(KIND=8), DIMENSION(1:nex,1:ney,0:dgorder,0:dgorder) :: quadVals,quadVals2
+	REAL(KIND=8), DIMENSION(0:nex+1,1:ney,0:1,0:dgorder) :: edgeValsEW,edgeValsEW2
+	REAL(KIND=8), DIMENSION(1:nex,0:ney+1,0:1,0:dgorder) :: edgeValsNS,edgeValsNS2
+
 	INTEGER :: i,j,s,t,l,m
 
 	REAL(KIND=4), DIMENSION(2) :: tstart,tend,t1,t2
 	REAL(KIND=4) :: t0,tf,tick,tock
 
-!go to 100
-!---------
 
 	coef1 = dt/dxel/dyel
 	! ######################
@@ -64,23 +67,27 @@ SUBROUTINE coeff_update(q,A,u_tmp,v_tmp,uedge_tmp,vedge_tmp,qnodes,qweights,Leg,
 		vedge = vedge_tmp*vel_update(time)
 
 	! Update fluxes
-	CALL numflx(A,Ghat,Fhat,uedge,vedge,Leg,dgorder,norder,nex,ney)
+	CALL evalExpansion(quadVals,edgeValsNS,edgeValsEW,A,LL,Leg,dgorder,norder,nex,ney)
+!	CALL numflx(A,Ghat,Fhat,uedge,vedge,Leg,dgorder,norder,nex,ney)
+	CALL numFlux(Fhat,Ghat,uEdge,vEdge,edgeValsNS,edgeValsEW,dgorder,norder,nex,ney)
 
 	! Perform first step of ssprk3
 	DO i=1,nex
 	DO j=1,ney
 		u_int = u(1+(i-1)*(dgorder+1):i*(dgorder+1),1+(j-1)*(dgorder+1):j*(dgorder+1))
 		v_int = v(1+(i-1)*(dgorder+1):i*(dgorder+1),1+(j-1)*(dgorder+1):j*(dgorder+1))
-		CALL R_fill(R,A(i,j,:,:),LL,dgorder,norder)
 
 		DO l=0,norder
 		DO m=0,norder
 			A1(i,j,l,m) = A(i,j,l,m)+ &
-					coef1*dadt(i,j,l,m,R,Fhat,Ghat,u_int,v_int,qweights,LL,dLL,Leg,dxel,dyel,dgorder,norder,nex,ney)
+					coef1*dadt(i,j,l,m,quadVals(i,j,:,:),Fhat,Ghat,u_int,v_int,qweights,LL,dLL,Leg,dxel,dyel,dgorder,norder,nex,ney)
 		ENDDO
 		ENDDO
 	ENDDO
 	ENDDO
+
+A = A1
+go to 100
 
 	IF( transient ) THEN
 	! Update velocities
@@ -91,18 +98,20 @@ SUBROUTINE coeff_update(q,A,u_tmp,v_tmp,uedge_tmp,vedge_tmp,qnodes,qweights,Leg,
 	ENDIF
 
 	! Update fluxes
-	CALL numflx(A1,Ghat,Fhat,uedge,vedge,Leg,dgorder,norder,nex,ney)
+	CALL evalExpansion(quadVals,edgeValsNS,edgeValsEW,A1,LL,Leg,dgorder,norder,nex,ney)
+!	CALL numflx(A1,Ghat,Fhat,uedge,vedge,Leg,dgorder,norder,nex,ney)
+	CALL numFlux(Fhat,Ghat,uEdge,vEdge,edgeValsNS,edgeValsEW,dgorder,norder,nex,ney)
+
 	! Perform second step of ssprk3
 	DO i=1,nex
 	DO j=1,ney
 		u_int = u(1+(i-1)*(dgorder+1):i*(dgorder+1),1+(j-1)*(dgorder+1):j*(dgorder+1))
 		v_int = v(1+(i-1)*(dgorder+1):i*(dgorder+1),1+(j-1)*(dgorder+1):j*(dgorder+1))
-		CALL R_fill(R,A1(i,j,:,:),LL,dgorder,norder)
 
 		DO l=0,norder
 		DO m=0,norder
 			A2(i,j,l,m) = (0.75D0)*A(i,j,l,m) + (0.25D0)*(A1(i,j,l,m) + &
-						coef1*dadt(i,j,l,m,R,Fhat,Ghat,u_int,v_int,qweights,LL,dLL,Leg, &
+						coef1*dadt(i,j,l,m,quadVals(i,j,:,:),Fhat,Ghat,u_int,v_int,qweights,LL,dLL,Leg, &
 						dxel,dyel,dgorder,norder,nex,ney))
 		ENDDO
 		ENDDO
@@ -118,29 +127,31 @@ SUBROUTINE coeff_update(q,A,u_tmp,v_tmp,uedge_tmp,vedge_tmp,qnodes,qweights,Leg,
 	ENDIF
 
 	! Update fluxes, fill R array
-	CALL numflx(A2,Ghat,Fhat,uedge,vedge,Leg,dgorder,norder,nex,ney)
+	CALL evalExpansion(quadVals,edgeValsNS,edgeValsEW,A2,LL,Leg,dgorder,norder,nex,ney)
+!	CALL numflx(A2,Ghat,Fhat,uedge,vedge,Leg,dgorder,norder,nex,ney)
+	CALL numFlux(Fhat,Ghat,uEdge,vEdge,edgeValsNS,edgeValsEW,dgorder,norder,nex,ney)
+
 	! Perform final step of ssprk3
 	DO i=1,nex
 	DO j=1,ney
 		u_int = u(1+(i-1)*(dgorder+1):i*(dgorder+1),1+(j-1)*(dgorder+1):j*(dgorder+1))
 		v_int = v(1+(i-1)*(dgorder+1):i*(dgorder+1),1+(j-1)*(dgorder+1):j*(dgorder+1))
-		CALL R_fill(R,A2(i,j,:,:),LL,dgorder,norder)
 
 		DO l=0,norder
 		DO m=0,norder
 			A(i,j,l,m) = A(i,j,l,m)/3D0 + (2D0/3D0)*(A2(i,j,l,m) + &
-						coef1*dadt(i,j,l,m,R,Fhat,Ghat,u_int,v_int,qweights,LL,dLL,Leg, &
+						coef1*dadt(i,j,l,m,quadVals(i,j,:,:),Fhat,Ghat,u_int,v_int,qweights,LL,dLL,Leg, &
 						dxel,dyel,dgorder,norder,nex,ney))
 		ENDDO
 		ENDDO
 	ENDDO
 	ENDDO
 
+100 continue
+
 	! #########
 	! END SPPRK3 TIMESTEP ; BEGIN FILLING q ARRAY
 	! #########
-
-100 continue
 
 	DO i=1,nex
 	DO j=1,ney
@@ -165,7 +176,7 @@ SUBROUTINE coeff_update(q,A,u_tmp,v_tmp,uedge_tmp,vedge_tmp,qnodes,qweights,Leg,
 
 END SUBROUTINE coeff_update
 
-REAL(KIND=8) FUNCTION dadt(i,j,l,m,Rin,Fhat,Ghat,u_int,v_int,qweights,LL,dLL,Leg,dxel,dyel,dgorder,norder,nex,ney)
+REAL(KIND=8) FUNCTION dadt(i,j,l,m,quadVals,Fhat,Ghat,u_int,v_int,qweights,LL,dLL,Leg,dxel,dyel,dgorder,norder,nex,ney)
 ! Computes dadt for element (i,j) for use in SSPRK3 update step
 ! Does this in 3 steps: dadt = [(2s+1)*(2t+1)/(2*dxel*dyel)](A+B+C) where
 !	1) A = Int(Int( dyel*dPs/dxi*Pt*F+dxel*dPt/deta*Ps*G )) -- Interior contribution to change
@@ -177,7 +188,7 @@ REAL(KIND=8) FUNCTION dadt(i,j,l,m,Rin,Fhat,Ghat,u_int,v_int,qweights,LL,dLL,Leg
 	! Inputs
 	INTEGER, INTENT(IN) :: i,j,l,m,dgorder,norder,nex,ney
 	REAL(KIND=8), INTENT(IN) :: dxel,dyel
- 	REAL(KIND=8), DIMENSION(0:dgorder,0:dgorder), INTENT(IN) :: u_int,v_int,Rin
+ 	REAL(KIND=8), DIMENSION(0:dgorder,0:dgorder), INTENT(IN) :: u_int,v_int,quadVals
 	REAL(KIND=8), DIMENSION(0:dgorder,0:norder), INTENT(IN) :: Leg
 	REAL(KIND=8), DIMENSION(0:norder,0:norder,0:dgorder,0:dgorder), INTENT(IN) :: LL,dLL
 	REAL(KIND=8), DIMENSION(0:dgorder), INTENT(IN) :: qweights
@@ -205,7 +216,7 @@ REAL(KIND=8) FUNCTION dadt(i,j,l,m,Rin,Fhat,Ghat,u_int,v_int,qweights,LL,dLL,Leg
 
 	FOO2D = TRANSPOSE(dLL(m,l,:,:))
 
-	A = SUM(spread(qweights(0:dgorder),dim=2,ncopies=dgorder+1)*spread(qweights(0:dgorder),dim=1,ncopies=dgorder+1)*Rin &
+	A = SUM(spread(qweights(0:dgorder),dim=2,ncopies=dgorder+1)*spread(qweights(0:dgorder),dim=1,ncopies=dgorder+1)*quadVals &
 			*(dyel*dLL(l,m,:,:)*u_int+dxel*FOO2D*v_int))
 
 	! Step 2: Compute B
@@ -273,25 +284,7 @@ SUBROUTINE numflx(A,Ghat,Fhat,uedge,vedge,Leg,dgorder,norder,nex,ney)
 				which_sign(l,:) = which_sign(0,:)
 			ENDDO
 			which_el = j + (1-INT(SIGN(1D0,v_tmp(k))) )/2
-
 			Ghat(i,j,k) = v_tmp(k)*SUM(Leg(k,:)*SUM(A_tmp(i,which_el,:,:)*which_sign,2))
-!			IF(v_tmp(k) .ge. 0D0) THEN
-
-!				DO m=0,norder
-!				DO l=0,norder
-!					FOO(l,m) = A_tmp(i,j,l,m)*Leg(k,l)
-!				ENDDO
-!				ENDDO	
-					
-!			ELSE
-
-!				DO m=0,norder
-!				DO l=0,norder
-!					FOO(l,m) = A_tmp(i,j+1,l,m)*Leg(k,l)*(-1D0)**(m)
-!				ENDDO
-!				ENDDO	
-!			ENDIF
-!			Ghat(i,j,k) = v_tmp(k)*SUM(FOO)
 		ENDDO
 		! Extend periodically
 		Ghat(1:nex,0,:) = Ghat(1:nex,ney,:)
@@ -304,24 +297,6 @@ SUBROUTINE numflx(A,Ghat,Fhat,uedge,vedge,Leg,dgorder,norder,nex,ney)
 			ENDDO
 			which_el = i + (1-INT(SIGN(1D0,u_tmp(k))) )/2
 			Fhat(i,j,k) = u_tmp(k)*SUM(Leg(k,:)*SUM(A_tmp(which_el,j,:,:)*which_sign,1))
-
-!			IF(u_tmp(k) .ge. 0D0) THEN
-
-!				DO m=0,norder
-!				DO l=0,norder
-!					FOO(l,m) = A_tmp(i,j,l,m)*Leg(k,m)
-!				ENDDO
-!				ENDDO	
-					
-!			ELSE
-
-!				DO m=0,norder
-!				DO l=0,norder
-!					FOO(l,m) = A_tmp(i+1,j,l,m)*Leg(k,m)*(-1D0)**(l)
-!				ENDDO
-!				ENDDO	
-!			ENDIF
-!			Fhat(i,j,k) = u_tmp(k)*SUM(FOO)
 		ENDDO
 		! Extend periodically
 		Fhat(0,1:ney,:) = Fhat(nex,1:ney,:)
@@ -330,6 +305,110 @@ SUBROUTINE numflx(A,Ghat,Fhat,uedge,vedge,Leg,dgorder,norder,nex,ney)
 	ENDDO
 	
 END SUBROUTINE numflx
+
+SUBROUTINE numFlux(Fhat,Ghat,uEdge,vEdge,edgeValsNS,edgeValsEW,dgorder,norder,nex,ney)
+	IMPLICIT NONE
+	! Inputs
+	INTEGER, INTENT(IN) :: dgorder,norder,nex,ney
+	REAL(KIND=8), DIMENSION(1:nex,1:(dgorder+1)*ney), INTENT(IN) :: uedge
+	REAL(KIND=8), DIMENSION(1:(dgorder+1)*nex,1:ney), INTENT(IN) :: vedge
+	REAL(KIND=8), DIMENSION(0:nex+1,1:ney,0:1,0:dgorder), INTENT(IN) :: edgeValsEW
+	REAL(KIND=8), DIMENSION(1:nex,0:ney+1,0:1,0:dgorder), INTENT(IN) :: edgeValsNS
+
+	! Outputs
+	REAL(KIND=8), DIMENSION(0:nex,1:ney,0:dgorder), INTENT(OUT) :: Fhat
+	REAL(KIND=8), DIMENSION(1:nex,0:ney,0:dgorder), INTENT(OUT) :: Ghat
+
+	! Local Variables
+	INTEGER :: i,j,k,l,m,s,t
+	REAL(KIND=8), DIMENSION(0:dgorder) :: u_tmp, v_tmp
+	INTEGER :: which_el,which_sign
+
+	DO i=1,nex
+		DO j=1,ney
+	
+			u_tmp = uedge(i,1+(j-1)*(dgorder+1):j*(dgorder+1))
+			v_tmp = vedge(1+(i-1)*(dgorder+1):i*(dgorder+1),j)
+
+			DO k=0,dgorder	
+				! Compute numerical flux through North edges (Ghat) (There are dgorder+1 nodes per element)
+				which_sign = 1-(1-INT(SIGN(1D0,v_tmp(k))) )/2
+				which_el = j + (1-INT(SIGN(1D0,v_tmp(k))) )/2
+				Ghat(i,j,k) = v_tmp(k)*edgeValsNS(i,which_el,which_sign,k)
+
+				! Compute numerical flux through East edges (Fhat) (There are dgorder+1 nodes per element)
+
+				which_sign = 1-(1-INT(SIGN(1D0,u_tmp(k))) )/2
+				which_el = i + (1-INT(SIGN(1D0,u_tmp(k))) )/2
+				Fhat(i,j,k) = u_tmp(k)*edgeValsEW(which_el,j,which_sign,k)
+			ENDDO !k
+		ENDDO !j
+	ENDDO !i
+
+	! Extend fluxes periodically 
+	Ghat(1:nex,0,:) = Ghat(1:nex,ney,:)
+	Fhat(0,1:ney,:) = Fhat(nex,1:ney,:)
+
+END SUBROUTINE numFlux
+
+SUBROUTINE evalExpansion(quadVals,edgeValsNS,edgeValsEW,Ain,LL,Leg,dgorder,norder,nex,ney)
+! Evaluate current expansion at interior quadrature locations and quadrature locations along EW and NS edges of each element
+	IMPLICIT NONE
+	! Inputs
+	INTEGER, INTENT(IN) :: dgorder,norder,nex,ney
+	REAL(KIND=8), DIMENSION(0:norder,0:norder,0:dgorder,0:dgorder), INTENT(IN) :: LL
+	REAL(KIND=8), DIMENSION(0:dgorder,0:norder), INTENT(IN) :: Leg
+	REAL(KIND=8), DIMENSION(1:nex,1:ney,0:norder,0:norder), INTENT(IN) :: Ain
+
+	! Outputs
+	REAL(KIND=8), DIMENSION(1:nex,1:ney,0:dgorder,0:dgorder), INTENT(OUT) :: quadVals
+	REAL(KIND=8), DIMENSION(0:nex+1,1:ney,0:1,0:dgorder), INTENT(OUT) :: edgeValsEW
+	REAL(KIND=8), DIMENSION(1:nex,0:ney+1,0:1,0:dgorder), INTENT(OUT) :: edgeValsNS
+
+	! Local Variables
+	INTEGER :: i,j,s,t,l
+	REAL(KIND=8), DIMENSION(0:norder) :: arr1,arr2
+	REAL(KIND=8), DIMENSION(0:norder,0:norder) :: tmp1, tmp2
+
+	arr1 = 1D0 ! P_l(1) = 1 for all orders l
+	arr2 = (/ ((-1D0)**i , i=0,norder) /) ! P_l(-1) = (-1)**l
+
+	DO l=0,norder
+		tmp1(:,l) = arr2
+		tmp2(l,:) = arr2
+	ENDDO !l
+
+	DO i=1,nex
+		DO j=1,ney
+			DO t=0,dgorder
+			
+				! Evaluate expansion at interior quadrature points using LL array
+				DO s=0,dgorder
+					quadVals(i,j,s,t) = SUM(Ain(i,j,:,:)*LL(:,:,s,t))			
+				ENDDO !s
+
+				! Evaluate expansion at NS edges
+				edgeValsNS(i,j,1,t) = SUM(Leg(t,:)*SUM(Ain(i,j,:,:),2))
+				edgeValsNS(i,j,0,t) = SUM(Leg(t,:)*SUM(Ain(i,j,:,:)*tmp2,2))
+
+				! Evaluate expansion at EW edges
+				edgeValsEW(i,j,1,t) = SUM(Leg(t,:)*SUM(Ain(i,j,:,:),1))
+				edgeValsEW(i,j,0,t) = SUM(Leg(t,:)*SUM(Ain(i,j,:,:)*tmp1,1))
+
+			ENDDO !t
+		ENDDO !j
+	ENDDO !i
+
+	! Extend edge values periodically
+	edgeValsEW(0,:,:,:) = edgeValsEW(nex,:,:,:)
+	edgeValsEW(nex+1,:,:,:) = edgeValsEW(1,:,:,:)
+
+	edgeValsNS(:,0,:,:) = edgeValsNS(:,ney,:,:)
+	edgeValsNS(:,ney+1,:,:) = edgeValsNS(:,1,:,:)
+
+
+
+END SUBROUTINE evalExpansion
 
 SUBROUTINE R_fill(R,Ain,LL,dgorder,norder)
 ! Compute approx soln at interior quad points (xi_s,eta_t) for element (i,j)
